@@ -1,0 +1,43 @@
+#camera_state: "CS"
+#project: "DZ"
+#scene: "overlook"
+###路径必须是E:/
+#save_path: 'E:\data\videos\1117-1124吊装误报视频数据\overlook_warn保存的图片'
+###读取图片/视频
+#task: "video"
+#
+##video_path必须是文件夹路径
+#video_path: 'E:\data\videos\1117-1124吊装误报视频数据\overlook_warn'
+#image_path: 'E:\data\images\2024_1119_驾驶室前方1\CS_DJ_Qin_Ri_ZC_driver_2024_11_19_145151_mul_obj_2.png'
+#model_path: 'E:\data\model\1126_models\models\overlook\1\model.onnx'
+#model_type: "v10"
+##保存的标签
+#error_labels: ["ren", "dadiaogou", "xiaodiaogou"]
+##模型的标签名
+#labels: ["ren", "dadiaogou", "xiaodiaogou", "shengsuo",
+#    "dianban", "jingjia", "zhongjingshiguan", "peizhong",
+#    "zhendongshai", "guanhui", "yeqifenliqi", "guanju",
+#    "nijiangbeng", "renzijia", "huanxingfangpengqi", "zhengchuan",
+#    "lixinji", "dashenglun", "ercengtai", "tianche",
+#    "zhabanfangpengqi", "chaiyouji", "yingfang", "diancishache",
+#    "yeqidaqian", "dingqu", "jiaoche", "chushachuniqi",
+#    "dizuo", "nijiangguan", "fadianji", "gaodeng",
+#    "qita_diaowu"]
+
+camera_state: "CS"
+project: "DZ"
+scene: "Inside"
+##路径必须是E:/
+save_path: 'E:\data\videos\1117-1124吊装误报视频数据\inside_误报保存的图片'
+##读取图片/视频
+task: "video"
+
+#video_path必须是文件夹路径
+video_path: 'E:\data\videos\1117-1124吊装误报视频数据\inside_error'
+image_path: 'E:\data\images\2024_1119_驾驶室前方1\CS_DJ_Qin_Ri_ZC_driver_2024_11_19_145151_mul_obj_2.png'
+model_path: 'E:\data\model\1126_models\models\inside\1\insidev10_dynamic.onnx'
+model_type: "v10"
+#保存的标签
+error_labels: ["jiashiyuan", "pingmu_an", "pingmu_liang", "shouji"]
+#模型的标签名
+labels: ["jiashiyuan", "pingmu_an", "pingmu_liang", "shouji"]
