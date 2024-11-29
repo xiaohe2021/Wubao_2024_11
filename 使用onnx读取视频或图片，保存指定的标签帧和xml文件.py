@@ -41,6 +41,9 @@ class Main:
         self.model_type = self.config['model_type']
         self.labels = self.config['labels']
 
+        # 添加帧计数和时间控制变量
+        self.last_save_time = 0  # 上次保存的时间
+        self.saved_frame_count = 0  # 已保存的错误标签帧计数
     def detect_video(self):
         model = None
         # 根据模型类型加载相应的推理模型
@@ -82,52 +85,43 @@ class Main:
                 # 仅保存包含错误标签的图像和XML文件
                 error_idx = [idx for idx, label in enumerate(labels) if label in self.error_labels]
 
-                # 如果没有错误标签，则跳过保存
+                # 检测到错误标签，进行帧保存处理
+                error_idx = [idx for idx, label in enumerate(labels) if label in self.error_labels]
+
                 if error_idx:
-                    # 过滤出错误标签的标签和框
-                    labels_filtered = [label for idx, label in enumerate(labels) if idx in error_idx]
-                    boxes_filtered = [box for idx, box in enumerate(boxes) if idx in error_idx]
+                    current_time = time.time()  # 获取当前时间
 
-                    # 创建XML文件并保存图像
-                    voc = CreateVoc()  #创建VOC的类
-                    strftime = self.videos.video_start_time
-                    prefix = f'{self.camera_state}_{self.project}_{self.scene}__{strftime}_{self.videos.frame_id}'
-                    xml_name = f'{prefix}.xml'
-                    img_name = f'{prefix}.jpg'
+                    # 判断当前时间和上次保存时间差
+                    if current_time - self.last_save_time > 1:
+                        self.saved_frame_count = 0  # 每秒重置计数器
 
-                    # 编码图像并保存
-                    success, encoded_image = cv2.imencode('.jpg', self.videos.current_image)
-                    if success:
-                        with open(os.path.join(self.save_path, img_name), 'wb') as f:
-                            f.write(encoded_image.tobytes())
+                    # 每秒最多保存 5 帧
+                    if self.saved_frame_count < 5:
+                        self.saved_frame_count += 1
+                        self.last_save_time = current_time  # 更新保存时间
 
-                    # 保存到 VOC 格式的 XML
-                    voc.set_info(xml_name, labels_filtered, boxes_filtered, self.save_path)
-                    voc.write_xml()
-                # # 保存视频帧和推理结果
-                # text_info = "\n".join(set(labels))
-                # voc = CreateVoc()
-                # strftime = self.videos.video_start_time
-                # prefix = f'{self.camera_state}_{self.project}_{self.scene}__{strftime}_{self.videos.frame_id}'
-                # xml_name = f'{prefix}.xml'
-                # img_name = f'{prefix}.jpg'
-                # success, encoded_image = cv2.imencode('.jpg', self.videos.current_image)
-                #
-                # # # 检查编码是否成功
-                # if success:
-                #     # 将编码后的图像数据保存为文件
-                #     with open(os.path.join(self.save_path, img_name), 'wb') as f:
-                #         f.write(encoded_image.tobytes())
-                # # cv2.imwrite(os.path.join(self.save_path, img_name), self.videos.current_image)
-                #
-                # # 过滤错误标签
-                # error_idx = [idx for idx, label in enumerate(labels) if label in self.error_labels]
-                # labels = [label for idx, label in enumerate(labels) if idx not in error_idx]
-                # boxes = [box for idx, box in enumerate(boxes) if idx not in error_idx]
-                #
-                # # 保存到 VOC
-                # voc.set_info(xml_name, labels, boxes, self.save_path)
-                # voc.write_xml()
+                        # 过滤出错误标签的标签和框
+                        labels_filtered = [label for idx, label in enumerate(labels) if idx in error_idx]
+                        boxes_filtered = [box for idx, box in enumerate(boxes) if idx in error_idx]
+
+                        # 创建XML文件并保存图像
+                        voc = CreateVoc()  # 创建VOC的类
+                        strftime = self.videos.video_start_time
+                        prefix = f'{self.camera_state}_{self.project}_{self.scene}__{strftime}_{self.videos.frame_id}'
+                        xml_name = f'{prefix}.xml'
+                        img_name = f'{prefix}.jpg'
+
+                        # 编码图像并保存
+                        success, encoded_image = cv2.imencode('.jpg', self.videos.current_image)
+                        if success:
+                            with open(os.path.join(self.save_path, img_name), 'wb') as f:
+                                f.write(encoded_image.tobytes())
+
+                        # 保存到 VOC 格式的 XML
+                        voc.set_info(xml_name, labels_filtered, boxes_filtered, self.save_path)
+                        voc.write_xml()
+                    else:
+                        print(f"错误标签帧过多，已跳过此帧：{self.videos.frame_id}")
 
         except Exception as e:
             print(f"Error reading video: {e}")
