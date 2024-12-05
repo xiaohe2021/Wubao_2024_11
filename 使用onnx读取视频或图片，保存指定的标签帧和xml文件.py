@@ -6,8 +6,8 @@ import numpy as np
 # 导入必要的库
 import yaml
 
-from model import V10OnnxPredictor
-from utils import Videos, plot_one_box, CreateVoc, Images
+from model import V10OnnxPredictor, V5OnnxPredictor, V5TorchPredictor
+from local_utils import Videos, plot_one_box, CreateVoc, Images
 
 
 # 加载YAML配置文件
@@ -48,8 +48,10 @@ class Main:
         model = None
         # 根据模型类型加载相应的推理模型
         if self.model_type == "v5":
-            # model = Predictor("v5_model_path")  # 请根据需要替换路径
-            pass
+            if self.model_path.endswith('.onnx'):
+                model = V5OnnxPredictor(self.model_path, self.labels)
+            elif self.model_path.endswith('.pt'):
+                model = V5TorchPredictor(self.model_path, self.labels)
         elif self.model_type == "v8":
             # model = Predictor("v8_model_path")  # 请根据需要替换路径
             pass
@@ -70,7 +72,6 @@ class Main:
             print("******************start************")
             for frame in self.videos.read_video():
                 res = []
-                # 进行推理
                 labels, boxes = model.predict(frame) if model else ([], [])
                 for idx, box in enumerate(boxes):
                     frame = plot_one_box(box, frame, label=labels[idx])

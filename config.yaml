@@ -28,16 +28,16 @@ camera_state: "CS"
 project: "DZ"
 scene: "Inside"
 ##路径必须是E:/
-save_path: 'E:\data\videos\1117-1124吊装误报视频数据\inside_误报保存的图片'
+save_path: 'E:\ajy_zj\donghuo'
 ##读取图片/视频
 task: "video"
 
 #video_path必须是文件夹路径
-video_path: 'E:\data\videos\1117-1124吊装误报视频数据\inside_error'
-image_path: 'E:\data\images\2024_1119_驾驶室前方1\CS_DJ_Qin_Ri_ZC_driver_2024_11_19_145151_mul_obj_2.png'
-model_path: 'E:\data\model\1126_models\models\inside\1\insidev10_dynamic.onnx'
-model_type: "v10"
+video_path: 'E:\data_down\20241115\20241115\动火'
+image_path: 'E:\ajy_zj\donghuo'
+model_path: 'D:\code\rDetectVideo\weights\jzq.pt'
+model_type: "v5"
 #保存的标签
-error_labels: ["jiashiyuan", "pingmu_an", "pingmu_liang", "shouji"]
+error_labels: ["jialiaokou"]
 #模型的标签名
-labels: ["jiashiyuan", "pingmu_an", "pingmu_liang", "shouji"]
+labels: ['zhongjingshiguan','nijiangcailiaodui','jialiao','jialiaokou','lvwang','lvwang_no','nijiangcailiao_banyun','njcl_damen']
