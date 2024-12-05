@@ -11,7 +11,160 @@ import numpy as np
 
 
 # 导入必要的库
+class BBox:
+    def __init__(self, xmin: int | float, ymin: int | float, xmax: int | float, ymax: int | float):
+        self._box = [xmin, ymin, xmax, ymax]
 
+    def to_list(self):
+        return self._box
+
+    @classmethod
+    def default(cls) -> 'Self':
+        return cls(0, 0, 1, 1)
+
+    def tojson(self) -> dict[str, float | int]:
+        return {
+            'xmin': self._box[0],
+            'ymin': self._box[1],
+            'xmax': self._box[2],
+            'ymax': self._box[3],
+        }
+
+    @classmethod
+    def fromjson(cls, json: dict[str, float | int]) -> Self:
+        return cls(json['xmin'], json['ymin'], json['xmax'], json['ymax'])
+
+    def __repr__(self) -> str:
+        return f"<BBox>: {self._box}"
+
+    __str__ = __repr__
+
+    def __eq__(self, other: Self) -> bool:
+        return self._box == other._box
+
+    def __iter__(self) -> Iterator[float]:
+        return iter(self._box)
+
+    def __getitem__(self, index: int) -> float | int:
+        return self._box[index]
+
+    def __setitem__(self, index: int, value: float | int):
+        self._box[index] = value
+
+    def __len__(self) -> int:
+        return len(self._box)
+
+    def __copy__(self):
+        return self.copy()
+
+    def copy(self) -> "BBox":
+        return BBox(*self._box.copy())
+
+    def clone(self) -> "BBox":
+        return BBox(*self._box.copy())
+
+    @property
+    def xmin(self) -> float:
+        return self._box[0]
+
+    def set_xmin(self, value: float):
+        self._box[0] = value
+
+    @property
+    def ymin(self) -> float:
+        return self._box[1]
+
+    def set_ymin(self, value: float):
+        self._box[1] = value
+
+    @property
+    def xmax(self) -> float:
+        return self._box[2]
+
+    def set_xmax(self, value: float):
+        self._box[2] = value
+
+    @property
+    def ymax(self) -> float:
+        return self._box[3]
+
+    def set_ymax(self, value: float):
+        self._box[3] = value
+
+    @property
+    def x1(self) -> float:
+        return self._box[0]
+
+    @property
+    def y1(self) -> float:
+        return self._box[1]
+
+    @property
+    def x2(self) -> float:
+        return self._box[2]
+
+    @property
+    def y2(self) -> float:
+        return self._box[3]
+
+    @property
+    def cx(self) -> float:
+        return (self._box[0] + self._box[2]) * 0.5
+
+    @property
+    def cy(self) -> float:
+        return (self._box[1] + self._box[3]) * 0.5
+
+    @property
+    def center(self) -> tuple[float, float]:
+        return (self._box[0] + self._box[2]) * 0.5, (self._box[1] + self._box[3]) * 0.5
+
+    @property
+    def width(self) -> float:
+        return self._box[2] - self._box[0]
+
+    @property
+    def height(self) -> float:
+        return self._box[3] - self._box[1]
+
+    @property
+    def area(self) -> float:
+        return self.width * self.height
+
+    @property
+    def diagonal(self):
+        box = self._box
+        return math.sqrt((box[2] - box[0]) ** 2 + (box[3] - box[1]) ** 2)
+
+    def intersection(self, rhs: "BBox") -> float:
+        xmin1, ymin1, xmax1, ymax1 = self._box
+        xmin2, ymin2, xmax2, ymax2 = rhs._box
+
+        intersect_xmin = max(xmin1, xmin2)
+        intersect_ymin = max(ymin1, ymin2)
+        intersect_xmax = min(xmax1, xmax2)
+        intersect_ymax = min(ymax1, ymax2)
+
+        if intersect_xmin < intersect_xmax and intersect_ymin < intersect_ymax:
+            return (intersect_xmax - intersect_xmin) * (intersect_ymax - intersect_ymin)
+        else:
+            return 0.0
+
+    def iou(self, rhs: "BBox") -> float:
+        intersection_area = self.intersection(rhs)
+        union_area = self.area + rhs.area - intersection_area
+        return intersection_area / union_area if union_area > 0 else 0.0
+
+    def clip_self(self, width: float | int, height: float | int) -> "BBox":
+        box = self._box
+        box[0] = max(box[0], 0.)
+        box[1] = max(box[1], 0.)
+        box[2] = min(box[2], width)
+        box[3] = min(box[3], height)
+        return self
+
+    def clip(self, width: float | int, height: float | int) -> "BBox":
+        return self.copy().clip_self(width, height)
 
 class CreateVoc:
     def __init__(self):

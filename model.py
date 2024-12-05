@@ -2,8 +2,11 @@ import numpy as np  # 导入numpy用于数组操作
 # 导入必要的库
 import onnxruntime  # 导入ONNX运行时
 import torch
+
+from local_utils import BBox
 from local_utils import letterbox
-import cv2
+from postprocess_1.yolov5_postprocess import postprocess_batch
+
 
 class V10OnnxPredictor:
     """YOLOv10 ONNX模型预测器"""
@@ -47,7 +50,7 @@ class V10OnnxPredictor:
         if isinstance(self.input_shape[2], str) or isinstance(self.input_shape[3], str):
             print(f"input_hw is a string: {input_hw}")
             # input_hw = (576, 1024)
-            input_hw = (383,640)
+            input_hw = (383, 640)
         print(f"input_hw is {input_hw}")
 
         # 调整图像大小
@@ -224,7 +227,14 @@ class V5OnnxPredictor:
     def predict(self, img):
         """执行预测"""
         try:
-            orig_shape = img.shape  # 保存原始图像尺寸
+            """后处理预测结果"""
+            labels = []  # 存储标签
+            boxes = []  # 存储边界框
+
+            iou_threshold = 0.5
+            conf_threshold = 0.5
+            # 保存原始图像尺寸
+            src_height, src_width = img.shape[:2]
             # 预处理图像
             input_tensor, scale = self.yolo_det_preprocess(img)
 
@@ -239,7 +249,17 @@ class V5OnnxPredictor:
             )
 
             # 后处理获取结果
-            labels, boxes = self.postprocess(outputs[0], scale)
+
+            for o in postprocess_batch(outputs,
+                                       iou_threshold,
+                                       conf_threshold)[0]:
+                xmin, ymin, xmax, ymax, cls, prob, i_grid = o
+                xmin = max(0., xmin) * scale
+                ymin = max(0., ymin) * scale
+                xmax = min(float(src_width), xmax) * scale
+                ymax = min(float(src_height), ymax) * scale
+                boxes = BBox(xmin, ymin, xmax, ymax)
+                labels = self.labels[cls]
             return labels, boxes
 
         except Exception as e:

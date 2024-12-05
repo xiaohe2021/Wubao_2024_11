@@ -6,8 +6,8 @@ import numpy as np
 # 导入必要的库
 import yaml
 
-from model import V10OnnxPredictor, V5OnnxPredictor, V5TorchPredictor
 from local_utils import Videos, plot_one_box, CreateVoc, Images
+from model import V10OnnxPredictor, V5OnnxPredictor, V5TorchPredictor
 
 
 # 加载YAML配置文件
@@ -44,6 +44,7 @@ class Main:
         # 添加帧计数和时间控制变量
         self.last_save_time = 0  # 上次保存的时间
         self.saved_frame_count = 0  # 已保存的错误标签帧计数
+
     def detect_video(self):
         model = None
         # 根据模型类型加载相应的推理模型
