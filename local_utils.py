@@ -1,10 +1,11 @@
 import copy
-import math  # 导入数学函数库
+import math
 import os
 import random
 import time
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+from typing import Iterator, Self
 
 import cv2
 import numpy as np
@@ -165,6 +166,7 @@ class BBox:
 
     def clip(self, width: float | int, height: float | int) -> "BBox":
         return self.copy().clip_self(width, height)
+
 
 class CreateVoc:
     def __init__(self):
