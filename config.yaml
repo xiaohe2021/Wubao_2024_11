@@ -27,17 +27,18 @@
 camera_state: "CS"
 project: "DZ"
 scene: "Inside"
-##路径必须是E:/
-save_path: 'E:\ajy_zj\donghuo'
+##！！！！！！！！！！！！！路径必须是单引号
+save_path: 'E:\data\images\seg'
 ##读取图片/视频
 task: "video"
 
 #video_path必须是文件夹路径
-video_path: 'E:\data_down\20241115\20241115\动火'
+video_path: 'E:\data\videos\吊装已整理测试视频\10.跨越警示围栏\around20240617_162328_kuayuejingshidai.mkv'
 image_path: 'E:\ajy_zj\donghuo'
-model_path: 'D:\code\rDetectVideo\weights\jzq.pt'
-model_type: "v5"
+model_path: 'E:\diaozhuang\model\jingshidai0925_modified.onnx'
+model_type: "v8"
+model_task: "segment"
 #保存的标签
-error_labels: ["jialiaokou"]
+error_labels: ["jingshidai"]
 #模型的标签名
-labels: ['zhongjingshiguan','nijiangcailiaodui','jialiao','jialiaokou','lvwang','lvwang_no','nijiangcailiao_banyun','njcl_damen']
+labels: ["jingshidai"]

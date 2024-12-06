@@ -1,3 +1,4 @@
+import cv2
 import numpy as np  # 导入numpy用于数组操作
 # 导入必要的库
 import onnxruntime  # 导入ONNX运行时
@@ -5,7 +6,9 @@ import torch
 
 from local_utils import BBox
 from local_utils import letterbox
-from postprocess_1.yolov5_postprocess import postprocess_batch
+from postprocess.yolov5_postprocess import postprocess_batch
+from postprocess.yolov8_seg_postprocess import yolov8_seg_postprocess_batch
+from preprocess.yolo_preprocess import yolo_det_preprocess
 
 
 class V10OnnxPredictor:
@@ -129,6 +132,156 @@ class V10OnnxPredictor:
             # 后处理获取结果
             labels, boxes = self.postprocess(outputs[0], scale)
             # res.append((labels, boxes))
+            return labels, boxes
+
+        except Exception as e:
+            print(f"推理错误: {str(e)}")
+            raise
+
+
+class V8SegOnnxPredictor:
+    """YOLOv8 Seg ONNX模型预测器"""
+
+    def __init__(self, model_path, labels):
+        self.model_path = model_path  # ONNX模型路径
+        self.labels = labels  # 动态标签集
+
+        # 配置CUDA执行提供程序
+        providers = [
+            ('CUDAExecutionProvider', {
+                'device_id': 0,  # GPU设备ID
+                'arena_extend_strategy': 'kNextPowerOfTwo',  # 内存分配策略
+                'gpu_mem_limit': 2 * 1024 * 1024 * 1024,  # GPU内存限制
+                'cudnn_conv_algo_search': 'EXHAUSTIVE',  # cuDNN卷积算法搜索策略
+                'do_copy_in_default_stream': True,  # 在默认流中复制
+            })
+        ]
+
+        # 初始化ONNX运行时会话
+        self.session = onnxruntime.InferenceSession(
+            model_path,
+            providers=providers
+        )
+
+        # 获取模型输入输出信息
+        self.input_name = self.session.get_inputs()[0].name  # 输入节点名称
+        self.input_shape = self.session.get_inputs()[0].shape  # 输入形状
+        self.output_names = [output.name for output in self.session.get_outputs()]  # 输出节点名称
+
+        # 配置会话选项
+        sess_options = onnxruntime.SessionOptions()
+        sess_options.log_severity_level = 3  # 设置日志级别
+        sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL  # 启用所有图优化
+        self.session.get_session_options().execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL  # 设置顺序执行模式
+
+    def predict(self, src_img):
+        """执行预测"""
+        try:
+            """后处理预测结果"""
+            labels = []  # 存储标签
+            boxes = []  # 存储边界框
+            iou_threshold = 0.5
+            conf_threshold = 0.5
+            input_hw = self.session.get_inputs()[0].shape[2:]
+            img, scale = yolo_det_preprocess(src_img, input_hw)
+            img = np.expand_dims(img, axis=0)
+
+            # # B C H W
+            src_height, src_width = src_img.shape[:2]
+            input_wh = src_width, src_height
+            # 执行推理
+            inputs = {self.session.get_inputs()[0].name: img}
+            det_output = self.session.run([self.session.get_outputs()[0].name], inputs)
+            # (1,37,12096)
+            pred_det = torch.from_numpy(det_output[0]).to(torch.device('cuda'))
+            pred_det = pred_det.cpu().numpy()
+
+            seg_output = self.session.run([self.session.get_outputs()[1].name], inputs)
+            pred_seg = torch.from_numpy(seg_output[0]).to(torch.device('cuda'))
+            pred_seg = pred_seg.cpu().numpy()
+
+            first_pred_det = pred_det[0]
+            first_pred_seg = pred_seg[0]  # C H W
+            for o in yolov8_seg_postprocess_batch(pred_det, iou_threshold, conf_threshold)[0]:
+                xmin, ymin, xmax, ymax, cls, prob, i_grid = o
+
+                query_vec = first_pred_det[-32:, i_grid]  # 32
+                masked = query_vec @ first_pred_seg.reshape(32, -1)  # (1, 144 * 256)
+                masked = masked.reshape(first_pred_seg.shape[1:])  # 恢复成 (144, 256) 的形状
+                mask_f32 = cv2.resize(masked, input_wh)  # 缩放掩码
+                mask = (mask_f32 > 0.5).astype(np.uint8)  # 二值化处理
+                # 找出掩码中的轮廓
+                mask = mask[int(ymin):int(ymax), int(xmin):int(xmax)]
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                # 找到最大轮廓
+                if len(contours):
+                    max_contour = max(contours, key=cv2.contourArea)[:, 0].astype(np.float32)
+                    max_contour[:, 0] += xmin
+                    max_contour[:, 1] += ymin
+                    max_contour[:, 0] *= scale
+                    max_contour[:, 1] *= scale
+                    max_contour = max_contour.astype(np.int32)
+                else:
+                    max_contour = []
+
+                xmin = float(max(0., xmin)) * scale
+                ymin = float(max(0., ymin)) * scale
+                xmax = float(min(src_width, xmax)) * scale
+                ymax = float(min(src_height, ymax)) * scale
+                box = [xmin, ymin, xmax, ymax]
+                boxes.append(box)
+                labels = self.labels[cls]
+                # 转换边界框为整数列表
+            boxes = [list(map(lambda x: int(x), box)) for box in boxes]
+
+            return labels, boxes
+
+        except Exception as e:
+            print(f"推理错误: {str(e)}")
+            raise
+
+
+class V8TorchSegPredictor:
+    """YOLOv8 Seg PyTorch模型预测器"""
+
+    def __init__(self, model_path, labels):
+        self.model_path = model_path  # PyTorch模型路径
+        self.labels = labels  # 动态标签集
+
+        self.device = 'cpu' if not torch.cuda.is_available() else 'cuda:0'
+        # 加载模型权重
+        # self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  # 使用 GPU 或 CPU
+        self.model = self._load_model_weights(model_path)
+        self.model.eval()  # 设置为推理模式
+        self.model.to(self.device)
+
+    def _load_model_weights(self, model_path):
+        """加载YOLOv5权重"""
+        try:
+            # 尝试直接加载权重
+            model = torch.hub.load('ultralytics/yolov5', 'custom', path=model_path, device=self.device)
+            return model
+        except Exception as e:
+            print(f"加载模型失败: {e}")
+            raise
+
+    def predict(self, img):
+        """执行预测"""
+        try:
+            orig_shape = img.shape  # 保存原始图像尺寸
+            # 预处理图像
+            input_tensor, scale = yolo_det_preprocess(img)
+
+            # 将图像转换为 PyTorch 张量并移动到设备（GPU 或 CPU）
+            input_tensor = torch.from_numpy(input_tensor).to(self.device)
+
+            # 执行推理
+            with torch.no_grad():  # 在推理时禁用梯度计算
+                pred = self.model(input_tensor)
+            # print(f"Prediction shape: {pred.shape}")
+            # print(f"Prediction content: {pred}")
+            # 后处理获取结果
+            labels, boxes = yolov8_seg_postprocess_batch(pred, 0.5, 0.5)
             return labels, boxes
 
         except Exception as e:

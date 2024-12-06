@@ -7,7 +7,7 @@ import numpy as np
 import yaml
 
 from local_utils import Videos, plot_one_box, CreateVoc, Images
-from model import V10OnnxPredictor, V5OnnxPredictor, V5TorchPredictor
+from model import V10OnnxPredictor, V5OnnxPredictor, V5TorchPredictor, V8SegOnnxPredictor, V8TorchSegPredictor
 
 
 # 加载YAML配置文件
@@ -40,25 +40,39 @@ class Main:
         self.error_labels = self.config['error_labels']
         self.model_type = self.config['model_type']
         self.labels = self.config['labels']
-
+        self.model_task = self.config['model_task']
         # 添加帧计数和时间控制变量
         self.last_save_time = 0  # 上次保存的时间
         self.saved_frame_count = 0  # 已保存的错误标签帧计数
 
     def detect_video(self):
         model = None
-        # 根据模型类型加载相应的推理模型
-        if self.model_type == "v5":
-            if self.model_path.endswith('.onnx'):
-                model = V5OnnxPredictor(self.model_path, self.labels)
-            elif self.model_path.endswith('.pt'):
-                model = V5TorchPredictor(self.model_path, self.labels)
-        elif self.model_type == "v8":
-            # model = Predictor("v8_model_path")  # 请根据需要替换路径
-            pass
-        elif self.model_type == "v10":
-            if self.model_path.endswith('.onnx'):
-                model = V10OnnxPredictor(self.model_path, self.labels)  # 这是你现有的v10推理模型
+        # 根据任务类型和模型类型加载相应的推理模型
+        if self.model_task == "detect":  # 检测任务
+            if self.model_type == "v5":
+                if self.model_path.endswith('.onnx'):
+                    model = V5OnnxPredictor(self.model_path, self.labels)
+                elif self.model_path.endswith('.pt'):
+                    model = V5TorchPredictor(self.model_path, self.labels)
+            elif self.model_type == "v8":
+                if self.model_path.endswith('.onnx'):
+                    # model = V8OnnxPredictor(self.model_path, self.labels)  # 检测任务模型
+                    pass
+                elif self.model_path.endswith('.pt'):
+                    # model = V8TorchPredictor(self.model_path, self.labels)
+                    pass
+            elif self.model_type == "v10":
+                if self.model_path.endswith('.onnx'):
+                    model = V10OnnxPredictor(self.model_path, self.labels)  # v10检测任务模型
+        elif self.model_task == "segment":  # 分割任务
+            if self.model_type == "v5":
+                # v5 不支持分割任务
+                pass
+            elif self.model_type == "v8":
+                if self.model_path.endswith('.onnx'):
+                    model = V8SegOnnxPredictor(self.model_path, self.labels)  # 分割任务模型
+                elif self.model_path.endswith('.pt'):
+                    model = V8TorchSegPredictor(self.model_path, self.labels)
         else:
             # 默认模型
             pass
@@ -74,8 +88,10 @@ class Main:
             for frame in self.videos.read_video():
                 res = []
                 labels, boxes = model.predict(frame) if model else ([], [])
+                print(f"labels, boxes",labels, boxes)
                 for idx, box in enumerate(boxes):
-                    frame = plot_one_box(box, frame, label=labels[idx])
+                    print(f"box", box)
+                    frame = plot_one_box(box, frame, label=labels)
 
                 # 根据窗口大小调整帧的内容
                 frame_resized = cv2.resize(frame, (window_width, window_height))
@@ -84,8 +100,6 @@ class Main:
                 # 按 'q' 键退出循环
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
-                # 仅保存包含错误标签的图像和XML文件
-                error_idx = [idx for idx, label in enumerate(labels) if label in self.error_labels]
 
                 # 检测到错误标签，进行帧保存处理
                 error_idx = [idx for idx, label in enumerate(labels) if label in self.error_labels]
