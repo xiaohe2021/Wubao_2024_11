@@ -86,12 +86,10 @@ class Main:
         try:
             print("******************start************")
             for frame in self.videos.read_video():
-                res = []
-                labels, boxes = model.predict(frame) if model else ([], [])
-                print(f"labels, boxes",labels, boxes)
+                labels, boxes = model.infer(frame) if model else ([], [])
                 for idx, box in enumerate(boxes):
-                    print(f"box", box)
-                    frame = plot_one_box(box, frame, label=labels)
+                    label = labels[idx] if idx < len(labels) else "unknown"  # 确保标签数量匹配
+                    frame = plot_one_box(box, frame, label=label)
 
                 # 根据窗口大小调整帧的内容
                 frame_resized = cv2.resize(frame, (window_width, window_height))
@@ -100,10 +98,8 @@ class Main:
                 # 按 'q' 键退出循环
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
-
                 # 检测到错误标签，进行帧保存处理
                 error_idx = [idx for idx, label in enumerate(labels) if label in self.error_labels]
-
                 if error_idx:
                     current_time = time.time()  # 获取当前时间
 
@@ -167,7 +163,7 @@ class Main:
             pass
         voc = CreateVoc()
         for image in self.images.read_images():
-            labels, boxes = model.predict(image)
+            labels, boxes = model.infer(image)
             print("**************start*************")
             # for idx, box in enumerate(boxes):
             #     image = plot_one_box(box, image, label=labels[idx])

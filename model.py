@@ -1,9 +1,10 @@
 import cv2
 import numpy as np  # 导入numpy用于数组操作
 # 导入必要的库
-import onnxruntime  # 导入ONNX运行时
 import torch
+from ultralytics import YOLO
 
+from base import ONNXBaseModel
 from local_utils import BBox
 from local_utils import letterbox
 from postprocess.yolov5_postprocess import postprocess_batch
@@ -11,127 +12,56 @@ from postprocess.yolov8_seg_postprocess import yolov8_seg_postprocess_batch
 from preprocess.yolo_preprocess import yolo_det_preprocess
 
 
-class V10OnnxPredictor:
+class V10OnnxPredictor(ONNXBaseModel):
     """YOLOv10 ONNX模型预测器"""
 
-    def __init__(self, model_path, labels):
-        self.model_path = model_path  # ONNX模型路径
-        self.labels = labels  # 动态标签集
-        # 配置CUDA执行提供程序
-        providers = [
-            ('CUDAExecutionProvider', {
-                'device_id': 0,  # GPU设备ID
-                'arena_extend_strategy': 'kNextPowerOfTwo',  # 内存分配策略
-                'gpu_mem_limit': 2 * 1024 * 1024 * 1024,  # GPU内存限制
-                'cudnn_conv_algo_search': 'EXHAUSTIVE',  # cuDNN卷积算法搜索策略
-                'do_copy_in_default_stream': True,  # 在默认流中复制
-            })
-        ]
+    def __init__(self, onnx_path, labels=None):
+        super().__init__(onnx_path,
+                         labels,
+                         providers=['CUDAExecutionProvider'] if torch.cuda.is_available() else ['CPUExecutionProvider'])
+        # 只有在父类初始化后，才可以访问 self.metadata_names
+        if labels is None:
+            self.labels = self.get_metadata_name()  # 使用元数据中的 names 作为 labels
+        print(f"Labels used in V10OnnxPredictor: {self.labels}")
 
-        # 初始化ONNX运行时会话
-        self.session = onnxruntime.InferenceSession(
-            model_path,
-            providers=providers
-        )
-
-        # 获取模型输入输出信息
-        self.input_name = self.session.get_inputs()[0].name  # 输入节点名称
-        self.input_shape = self.session.get_inputs()[0].shape  # 输入形状
-        self.output_names = [output.name for output in self.session.get_outputs()]  # 输出节点名称
-
-        # 配置会话选项
-        sess_options = onnxruntime.SessionOptions()
-        sess_options.log_severity_level = 3  # 设置日志级别
-        sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL  # 启用所有图优化
-        self.session.get_session_options().execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL  # 设置顺序执行模式
-
-    def yolo_det_preprocess(self, img: np.ndarray) -> tuple[np.ndarray, float]:
-        print("*************")
-        """预处理图像用于YOLO检测"""
-
-        input_hw = (self.input_shape[2], self.input_shape[3])  # 获取输入尺寸
-        if isinstance(self.input_shape[2], str) or isinstance(self.input_shape[3], str):
-            print(f"input_hw is a string: {input_hw}")
-            # input_hw = (576, 1024)
-            input_hw = (383, 640)
-        print(f"input_hw is {input_hw}")
-
-        # 调整图像大小
-        img, scale = letterbox(img, new_hw=input_hw)
-
-        # 确保图像类型为 float32，且能够进行归一化
-        if img.dtype != np.float32:
-            print(f"Warning: img.dtype is {img.dtype}, converting to float32")
-            img = img.astype(np.float32)  # 转换为 float32 类型
-        img = img / 255.  # 归一化
-
-        # 检查图像的通道数
-        if len(img.shape) == 2:  # 灰度图像（1通道）
-            print("Input image is grayscale. Converting to RGB.")
-            img = np.expand_dims(img, axis=-1)  # 将灰度图像从 (height, width) 转换为 (height, width, 1)
-            img = np.repeat(img, 3, axis=-1)  # 将灰度图复制为 3 通道，变为 RGB 图像
-
-        elif len(img.shape) == 3 and img.shape[2] == 3:  # 如果是 RGB 图像
-            img = img[:, :, ::-1]  # BGR 转 RGB（假设输入是 BGR）
-        # 确保图像的形状为 (height, width, 3)
-        img = img.transpose(2, 0, 1)  # 转换为 (3, height, width)
-        # print(f"Image shape after processing: {img.shape}")
-        # 返回处理后的图像和缩放比例
-        return np.ascontiguousarray(img[None, :, :, :]), scale  # 增加 batch 维度并返回
-
-    def postprocess(self, pred, scale):
-        """后处理预测结果"""
-        labels = []  # 存储标签
-        boxes = []  # 存储边界框
-        conf_threshold = 0.6  # 置信度阈值
-
-        # 确保预测结果在CPU上
-        if isinstance(pred, np.ndarray):
-            pred_cpu = pred
-        else:
-            pred_cpu = pred.cpu().numpy() if hasattr(pred, 'cpu') else pred
-        # print(f"pred_cpu 类型: {type(pred_cpu)}")
-        # print(f"pred_cpu 形状: {pred_cpu.shape if hasattr(pred_cpu, 'shape') else '无形状'}")
-        # print(f"pred_cpu 内容: {pred_cpu}")
-        # 处理每个检测结果
-        for xmin, ymin, xmax, ymax, prob, cls in pred_cpu[0]:
-            if prob < conf_threshold:  # 过滤低置信度的检测
-                break
-            cls = int(cls)  # 类别索引
-
-            label = self.labels[cls]  # 生成类别标签
-            # 还原边界框坐标到原始图像尺寸
-            xmin = float(xmin) * scale
-            ymin = float(ymin) * scale
-            xmax = float(xmax) * scale
-            ymax = float(ymax) * scale
-            box = [xmin, ymin, xmax, ymax]
-            labels.append(label)
-            boxes.append(box)
-        # 转换边界框为整数列表
-        boxes = [list(map(lambda x: int(x), box)) for box in boxes]
-        return labels, boxes
-
-    def predict(self, img):
+    def infer(self, src_img):
         """执行预测"""
         try:
-            orig_shape = img.shape  # 保存原始图像尺寸
-            res = []
+            input_hw = self.get_input_hw_shape()
             # 预处理图像
-            input_tensor, scale = self.yolo_det_preprocess(img)
-
-            # 确保输入数据连续
-            if not input_tensor.flags['C_CONTIGUOUS']:
-                input_tensor = np.ascontiguousarray(input_tensor)
-
+            img, scale = yolo_det_preprocess(src_img, input_hw)
+            img = np.expand_dims(img, axis=0)
             # 运行推理
-            outputs = self.session.run(
-                self.output_names,
-                {self.input_name: input_tensor}
+            pred = self.session.run(
+                [self.get_output_names0()],
+                {self.get_input_name(): img}
             )
             # 后处理获取结果
-            labels, boxes = self.postprocess(outputs[0], scale)
-            # res.append((labels, boxes))
+            # 确保预测结果在CPU上
+            if isinstance(pred, np.ndarray):
+                pred_cpu = pred
+            else:
+                pred_cpu = pred.cpu().numpy() if hasattr(pred, 'cpu') else pred
+            # 处理每个检测结果
+            labels = []
+            boxes = []
+            conf_threshold = 0.6
+            for xmin, ymin, xmax, ymax, prob, cls in pred_cpu[0][0]:
+                if prob < conf_threshold:  # 过滤低置信度的检测
+                    break
+                cls = int(cls)  # 类别索引
+
+                label = self.labels[cls]  # 生成类别标签
+                # 还原边界框坐标到原始图像尺寸
+                xmin = float(xmin) * scale
+                ymin = float(ymin) * scale
+                xmax = float(xmax) * scale
+                ymax = float(ymax) * scale
+                box = [xmin, ymin, xmax, ymax]
+                labels.append(label)
+                boxes.append(box)
+            # 转换边界框为整数列表
+            boxes = [list(map(lambda x: int(x), box)) for box in boxes]
             return labels, boxes
 
         except Exception as e:
@@ -139,42 +69,19 @@ class V10OnnxPredictor:
             raise
 
 
-class V8SegOnnxPredictor:
+class V8SegOnnxPredictor(ONNXBaseModel):
     """YOLOv8 Seg ONNX模型预测器"""
 
-    def __init__(self, model_path, labels):
-        self.model_path = model_path  # ONNX模型路径
-        self.labels = labels  # 动态标签集
+    def __init__(self, onnx_path, labels=None):
+        super().__init__(onnx_path,
+                         labels,
+                         providers=['CUDAExecutionProvider'] if torch.cuda.is_available() else ['CPUExecutionProvider'])
+        # 只有在父类初始化后，才可以访问 self.metadata_names
+        if labels is None:
+            self.labels = self.get_metadata_name()  # 使用元数据中的 names 作为 labels
+        print(f"Labels used in V8SegOnnxPredictor: {self.labels}")
 
-        # 配置CUDA执行提供程序
-        providers = [
-            ('CUDAExecutionProvider', {
-                'device_id': 0,  # GPU设备ID
-                'arena_extend_strategy': 'kNextPowerOfTwo',  # 内存分配策略
-                'gpu_mem_limit': 2 * 1024 * 1024 * 1024,  # GPU内存限制
-                'cudnn_conv_algo_search': 'EXHAUSTIVE',  # cuDNN卷积算法搜索策略
-                'do_copy_in_default_stream': True,  # 在默认流中复制
-            })
-        ]
-
-        # 初始化ONNX运行时会话
-        self.session = onnxruntime.InferenceSession(
-            model_path,
-            providers=providers
-        )
-
-        # 获取模型输入输出信息
-        self.input_name = self.session.get_inputs()[0].name  # 输入节点名称
-        self.input_shape = self.session.get_inputs()[0].shape  # 输入形状
-        self.output_names = [output.name for output in self.session.get_outputs()]  # 输出节点名称
-
-        # 配置会话选项
-        sess_options = onnxruntime.SessionOptions()
-        sess_options.log_severity_level = 3  # 设置日志级别
-        sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL  # 启用所有图优化
-        self.session.get_session_options().execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL  # 设置顺序执行模式
-
-    def predict(self, src_img):
+    def infer(self, src_img):
         """执行预测"""
         try:
             """后处理预测结果"""
@@ -182,7 +89,7 @@ class V8SegOnnxPredictor:
             boxes = []  # 存储边界框
             iou_threshold = 0.5
             conf_threshold = 0.5
-            input_hw = self.session.get_inputs()[0].shape[2:]
+            input_hw = self.get_input_hw_shape()
             img, scale = yolo_det_preprocess(src_img, input_hw)
             img = np.expand_dims(img, axis=0)
 
@@ -190,13 +97,13 @@ class V8SegOnnxPredictor:
             src_height, src_width = src_img.shape[:2]
             input_wh = src_width, src_height
             # 执行推理
-            inputs = {self.session.get_inputs()[0].name: img}
-            det_output = self.session.run([self.session.get_outputs()[0].name], inputs)
+            inputs = {self.get_input_name(): img}
+            det_output = self.session.run([self.get_output_names0()], inputs)
             # (1,37,12096)
             pred_det = torch.from_numpy(det_output[0]).to(torch.device('cuda'))
             pred_det = pred_det.cpu().numpy()
 
-            seg_output = self.session.run([self.session.get_outputs()[1].name], inputs)
+            seg_output = self.session.run([self.get_output_names1()], inputs)
             pred_seg = torch.from_numpy(seg_output[0]).to(torch.device('cuda'))
             pred_seg = pred_seg.cpu().numpy()
 
@@ -241,6 +148,127 @@ class V8SegOnnxPredictor:
             raise
 
 
+class V5OnnxPredictor(ONNXBaseModel):
+    """YOLOv5 ONNX模型预测器"""
+
+    def __init__(self, onnx_path, labels=None):
+        super().__init__(onnx_path,
+                         labels,
+                         providers=['CUDAExecutionProvider'] if torch.cuda.is_available() else ['CPUExecutionProvider'])
+        # 只有在父类初始化后，才可以访问 self.metadata_names
+        if labels is None:
+            self.labels = self.get_metadata_name()  # 使用元数据中的 names 作为 labels
+        print(f"Labels used in V5OnnxPredictor: {self.labels}")
+
+    def infer(self, src_img):
+        """执行预测"""
+        try:
+            """后处理预测结果"""
+            labels = []  # 存储标签
+            boxes = []  # 存储边界框
+
+            iou_threshold = 0.5
+            conf_threshold = 0.5
+            input_hw = self.get_input_hw_shape()
+            # 保存原始图像尺寸
+            src_height, src_width = src_img.shape[:2]
+            # 预处理图像
+            input_tensor, scale = yolo_det_preprocess(src_img, input_hw)
+
+            # 确保输入数据连续
+            if not input_tensor.flags['C_CONTIGUOUS']:
+                input_tensor = np.ascontiguousarray(input_tensor)
+
+            # 运行推理
+            outputs = self.session.run(
+                self.get_output_names0(),
+                {self.get_input_name(): input_tensor}
+            )
+
+            # 后处理获取结果
+
+            for o in postprocess_batch(outputs,
+                                       iou_threshold,
+                                       conf_threshold)[0]:
+                xmin, ymin, xmax, ymax, cls, prob, i_grid = o
+                xmin = max(0., xmin) * scale
+                ymin = max(0., ymin) * scale
+                xmax = min(float(src_width), xmax) * scale
+                ymax = min(float(src_height), ymax) * scale
+                boxes = BBox(xmin, ymin, xmax, ymax)
+                labels = self.labels[cls]
+            return labels, boxes
+
+        except Exception as e:
+            print(f"推理错误: {str(e)}")
+            raise
+
+
+class V10TorchPredictor:
+    """YOLOv5 PyTorch模型预测器"""
+
+    def __init__(self, model_path, labels):
+        self.model_path = model_path  # PyTorch模型路径
+        self.labels = labels  # 动态标签集
+
+        self.device = 'cpu' if not torch.cuda.is_available() else 'cuda:0'
+        # 加载模型权重
+        # self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  # 使用 GPU 或 CPU
+        # 加载模型
+        self.model = YOLO(model_path)  # 直接通过 ultralytics 加载 YOLOv8 模型
+        self.model.eval()  # 设置为推理模式
+        self.model.to(self.device)
+
+
+    def infer(self, img):
+        """执行预测"""
+        try:
+            orig_shape = img.shape  # 保存原始图像尺寸
+            input_hw = (640,640)
+            # 预处理图像
+            input_tensor, scale = yolo_det_preprocess(img,input_hw)
+
+            # 将图像转换为 PyTorch 张量并移动到设备（GPU 或 CPU）
+            input_tensor = torch.from_numpy(input_tensor).to(self.device)
+
+            # 执行推理
+            with torch.no_grad():  # 在推理时禁用梯度计算
+                pred = self.model(input_tensor)
+            print(f"Prediction shape: {pred.shape}")
+            print(f"Prediction content: {pred}")
+            # 后处理获取结果
+            # 确保预测结果在CPU上
+            if isinstance(pred, np.ndarray):
+                pred_cpu = pred
+            else:
+                pred_cpu = pred.cpu().numpy() if hasattr(pred, 'cpu') else pred
+            # 处理每个检测结果
+            labels = []
+            boxes = []
+            conf_threshold = 0.6
+            for xmin, ymin, xmax, ymax, prob, cls in pred_cpu[0]:
+                if prob < conf_threshold:  # 过滤低置信度的检测
+                    break
+                cls = int(cls)  # 类别索引
+
+                label = self.labels[cls]  # 生成类别标签
+                # 还原边界框坐标到原始图像尺寸
+                xmin = float(xmin) * scale
+                ymin = float(ymin) * scale
+                xmax = float(xmax) * scale
+                ymax = float(ymax) * scale
+                box = [xmin, ymin, xmax, ymax]
+                labels.append(label)
+                boxes.append(box)
+            # 转换边界框为整数列表
+            boxes = [list(map(lambda x: int(x), box)) for box in boxes]
+            return labels, boxes
+
+        except Exception as e:
+            print(f"推理错误: {str(e)}")
+            raise
+
+
 class V8TorchSegPredictor:
     """YOLOv8 Seg PyTorch模型预测器"""
 
@@ -251,21 +279,13 @@ class V8TorchSegPredictor:
         self.device = 'cpu' if not torch.cuda.is_available() else 'cuda:0'
         # 加载模型权重
         # self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  # 使用 GPU 或 CPU
-        self.model = self._load_model_weights(model_path)
+        # 加载模型
+        self.model = YOLO(model_path)  # 直接通过 ultralytics 加载 YOLOv8 模型
         self.model.eval()  # 设置为推理模式
         self.model.to(self.device)
 
-    def _load_model_weights(self, model_path):
-        """加载YOLOv5权重"""
-        try:
-            # 尝试直接加载权重
-            model = torch.hub.load('ultralytics/yolov5', 'custom', path=model_path, device=self.device)
-            return model
-        except Exception as e:
-            print(f"加载模型失败: {e}")
-            raise
 
-    def predict(self, img):
+    def infer(self, img):
         """执行预测"""
         try:
             orig_shape = img.shape  # 保存原始图像尺寸
@@ -282,137 +302,6 @@ class V8TorchSegPredictor:
             # print(f"Prediction content: {pred}")
             # 后处理获取结果
             labels, boxes = yolov8_seg_postprocess_batch(pred, 0.5, 0.5)
-            return labels, boxes
-
-        except Exception as e:
-            print(f"推理错误: {str(e)}")
-            raise
-
-
-class V5OnnxPredictor:
-    """YOLOv5 ONNX模型预测器"""
-
-    def __init__(self, model_path, labels):
-        self.model_path = model_path  # ONNX模型路径
-        self.labels = labels  # 动态标签集
-
-        # 配置CUDA执行提供程序
-        providers = [
-            ('CUDAExecutionProvider', {
-                'device_id': 0,  # GPU设备ID
-                'arena_extend_strategy': 'kNextPowerOfTwo',  # 内存分配策略
-                'gpu_mem_limit': 2 * 1024 * 1024 * 1024,  # GPU内存限制
-                'cudnn_conv_algo_search': 'EXHAUSTIVE',  # cuDNN卷积算法搜索策略
-                'do_copy_in_default_stream': True,  # 在默认流中复制
-            })
-        ]
-
-        # 初始化ONNX运行时会话
-        self.session = onnxruntime.InferenceSession(
-            model_path,
-            providers=providers
-        )
-
-        # 获取模型输入输出信息
-        self.input_name = self.session.get_inputs()[0].name  # 输入节点名称
-        self.input_shape = self.session.get_inputs()[0].shape  # 输入形状
-        self.output_names = [output.name for output in self.session.get_outputs()]  # 输出节点名称
-
-        # 配置会话选项
-        sess_options = onnxruntime.SessionOptions()
-        sess_options.log_severity_level = 3  # 设置日志级别
-        sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL  # 启用所有图优化
-        self.session.get_session_options().execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL  # 设置顺序执行模式
-
-    def yolo_det_preprocess(self, img: np.ndarray) -> tuple[np.ndarray, float]:
-        """预处理图像用于YOLO检测"""
-        input_hw = (self.input_shape[2], self.input_shape[3])  # 获取输入尺寸
-        if isinstance(self.input_shape[2], str) or isinstance(self.input_shape[3], str):
-            # 若模型形状为字符串，使用默认尺寸 (640, 640)
-            input_hw = (640, 640)
-
-        # 调整图像大小并保持长宽比
-        img, scale = letterbox(img, new_hw=input_hw)
-
-        # 确保图像类型为 float32，且能够进行归一化
-        img = img.astype(np.float32) / 255.0  # 归一化到 [0, 1]
-
-        # 检查图像的通道数
-        if len(img.shape) == 2:  # 灰度图像
-            img = np.expand_dims(img, axis=-1)  # 增加通道维度
-            img = np.repeat(img, 3, axis=-1)  # 转为 3 通道
-        elif len(img.shape) == 3 and img.shape[2] == 3:  # RGB图像
-            img = img[:, :, ::-1]  # 转换为RGB格式（如果是BGR格式）
-
-        # 转换为 NCHW 格式
-        img = img.transpose(2, 0, 1)
-        return np.ascontiguousarray(img[None, :, :, :]), scale  # 增加batch维度
-
-    def postprocess(self, pred, scale):
-        """后处理预测结果"""
-        labels = []  # 存储标签
-        boxes = []  # 存储边界框
-        conf_threshold = 0.6  # 置信度阈值
-
-        # 确保预测结果在CPU上
-        pred_cpu = pred.cpu().numpy() if hasattr(pred, 'cpu') else pred
-
-        # 处理每个检测结果
-        for xmin, ymin, xmax, ymax, prob, cls in pred_cpu[0]:
-            if prob < conf_threshold:  # 过滤低置信度的检测
-                break
-            cls = int(cls)  # 类别索引
-
-            label = self.labels[cls]  # 生成类别标签
-            # 还原边界框坐标到原始图像尺寸
-            xmin = float(xmin) * scale
-            ymin = float(ymin) * scale
-            xmax = float(xmax) * scale
-            ymax = float(ymax) * scale
-            box = [xmin, ymin, xmax, ymax]
-            labels.append(label)
-            boxes.append(box)
-
-        # 转换边界框为整数列表
-        boxes = [list(map(lambda x: int(x), box)) for box in boxes]
-        return labels, boxes
-
-    def predict(self, img):
-        """执行预测"""
-        try:
-            """后处理预测结果"""
-            labels = []  # 存储标签
-            boxes = []  # 存储边界框
-
-            iou_threshold = 0.5
-            conf_threshold = 0.5
-            # 保存原始图像尺寸
-            src_height, src_width = img.shape[:2]
-            # 预处理图像
-            input_tensor, scale = self.yolo_det_preprocess(img)
-
-            # 确保输入数据连续
-            if not input_tensor.flags['C_CONTIGUOUS']:
-                input_tensor = np.ascontiguousarray(input_tensor)
-
-            # 运行推理
-            outputs = self.session.run(
-                self.output_names,
-                {self.input_name: input_tensor}
-            )
-
-            # 后处理获取结果
-
-            for o in postprocess_batch(outputs,
-                                       iou_threshold,
-                                       conf_threshold)[0]:
-                xmin, ymin, xmax, ymax, cls, prob, i_grid = o
-                xmin = max(0., xmin) * scale
-                ymin = max(0., ymin) * scale
-                xmax = min(float(src_width), xmax) * scale
-                ymax = min(float(src_height), ymax) * scale
-                boxes = BBox(xmin, ymin, xmax, ymax)
-                labels = self.labels[cls]
             return labels, boxes
 
         except Exception as e:
@@ -497,7 +386,7 @@ class V5TorchPredictor:
 
         return labels, boxes
 
-    def predict(self, img):
+    def infer(self, img):
         """执行预测"""
         try:
             orig_shape = img.shape  # 保存原始图像尺寸
