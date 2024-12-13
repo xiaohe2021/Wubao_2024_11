@@ -1,3 +1,5 @@
+import json
+
 import cv2
 import numpy as np  # 导入numpy用于数组操作
 # 导入必要的库
@@ -7,7 +9,8 @@ from ultralytics import YOLO
 from base import ONNXBaseModel
 from local_utils import BBox
 from local_utils import letterbox
-from postprocess.yolov5_postprocess import postprocess_batch
+from postprocess.yolov5_postprocess import yolov5_detect_postprocess_batch
+from postprocess.yolov8_detect_props_postprocess import yolov8_detect_props_postprocess_batch
 from postprocess.yolov8_seg_postprocess import yolov8_seg_postprocess_batch
 from preprocess.yolo_preprocess import yolo_det_preprocess
 
@@ -51,7 +54,69 @@ class V10OnnxPredictor(ONNXBaseModel):
                     break
                 cls = int(cls)  # 类别索引
 
-                label = self.labels[cls]  # 生成类别标签
+                label = [self.labels[cls]]  # 生成类别标签
+                # 还原边界框坐标到原始图像尺寸
+                xmin = float(xmin) * scale
+                ymin = float(ymin) * scale
+                xmax = float(xmax) * scale
+                ymax = float(ymax) * scale
+                box = [xmin, ymin, xmax, ymax]
+                labels.append(label)
+                boxes.append(box)
+            # 转换边界框为整数列表
+            boxes = [list(map(lambda x: int(x), box)) for box in boxes]
+            return labels, boxes
+
+        except Exception as e:
+            print(f"推理错误: {str(e)}")
+            raise
+
+
+class V8DetectPropsOnnxPredictor(ONNXBaseModel):
+    """YOLOv8 Seg ONNX模型预测器"""
+
+    def __init__(self, onnx_path, labels=None):
+        super().__init__(onnx_path,
+                         labels,
+                         providers=['CUDAExecutionProvider'] if torch.cuda.is_available() else ['CPUExecutionProvider'])
+        # 只有在父类初始化后，才可以访问 self.metadata_names
+        if labels is None:
+            self.labels = self.get_metadata_name()  # 使用元数据中的 names 作为 labels
+        print(f"Labels used in V8SegOnnxPredictor: {self.labels}")
+
+    def infer(self, src_img):
+        """执行预测"""
+        try:
+            """后处理预测结果"""
+            labels = []  # 存储标签
+            boxes = []  # 存储边界框
+            iou_threshold = 0.5
+            conf_threshold = 0.5
+            input_hw = self.get_input_hw_shape()
+            img, scale = yolo_det_preprocess(src_img, input_hw)
+            img = np.expand_dims(img, axis=0)
+
+            # # B C H W
+            src_height, src_width = src_img.shape[:2]
+            input_wh = src_width, src_height
+            # 执行推理
+            inputs = {self.get_input_name(): img}
+            det_output = self.session.run([self.get_output_names0()], inputs)
+            # (1,37,12096)
+            pred_det = torch.from_numpy(det_output[0]).to(torch.device('cuda'))
+            pred_det = pred_det.cpu().numpy()
+            for o in yolov8_detect_props_postprocess_batch(
+                    pred_det,
+                    iou_threshold,
+                    conf_threshold,
+                    len(self.labels),
+                    has_property=[],
+                    property_groups=[],
+            )[0]:
+                (xmin, ymin, xmax, ymax, cls, prob), props = o
+                cls = int(cls)  # 类别索引
+
+                label = self.labels[cls] # 生成类别标签
                 # 还原边界框坐标到原始图像尺寸
                 xmin = float(xmin) * scale
                 ymin = float(ymin) * scale
@@ -137,7 +202,7 @@ class V8SegOnnxPredictor(ONNXBaseModel):
                 ymax = float(min(src_height, ymax)) * scale
                 box = [xmin, ymin, xmax, ymax]
                 boxes.append(box)
-                labels = self.labels[cls]
+                labels = [self.labels[cls]]
                 # 转换边界框为整数列表
             boxes = [list(map(lambda x: int(x), box)) for box in boxes]
 
@@ -187,16 +252,16 @@ class V5OnnxPredictor(ONNXBaseModel):
 
             # 后处理获取结果
 
-            for o in postprocess_batch(outputs,
-                                       iou_threshold,
-                                       conf_threshold)[0]:
+            for o in yolov5_detect_postprocess_batch(outputs,
+                                                     iou_threshold,
+                                                     conf_threshold)[0]:
                 xmin, ymin, xmax, ymax, cls, prob, i_grid = o
                 xmin = max(0., xmin) * scale
                 ymin = max(0., ymin) * scale
                 xmax = min(float(src_width), xmax) * scale
                 ymax = min(float(src_height), ymax) * scale
                 boxes = BBox(xmin, ymin, xmax, ymax)
-                labels = self.labels[cls]
+                labels = [self.labels[cls]]
             return labels, boxes
 
         except Exception as e:
@@ -216,49 +281,48 @@ class V10TorchPredictor:
         # self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  # 使用 GPU 或 CPU
         # 加载模型
         self.model = YOLO(model_path)  # 直接通过 ultralytics 加载 YOLOv8 模型
-        self.model.eval()  # 设置为推理模式
+        # self.model.eval()  # 设置为推理模式
         self.model.to(self.device)
-
 
     def infer(self, img):
         """执行预测"""
         try:
             orig_shape = img.shape  # 保存原始图像尺寸
-            input_hw = (640,640)
+            input_hw = (640, 640)
             # 预处理图像
-            input_tensor, scale = yolo_det_preprocess(img,input_hw)
-
+            input_tensor, scale = yolo_det_preprocess(img, input_hw)
+            input_tensor = np.expand_dims(input_tensor, axis=0)
             # 将图像转换为 PyTorch 张量并移动到设备（GPU 或 CPU）
             input_tensor = torch.from_numpy(input_tensor).to(self.device)
 
             # 执行推理
             with torch.no_grad():  # 在推理时禁用梯度计算
                 pred = self.model(input_tensor)
-            print(f"Prediction shape: {pred.shape}")
-            print(f"Prediction content: {pred}")
-            # 后处理获取结果
-            # 确保预测结果在CPU上
-            if isinstance(pred, np.ndarray):
-                pred_cpu = pred
-            else:
-                pred_cpu = pred.cpu().numpy() if hasattr(pred, 'cpu') else pred
+                # result = self.model(input_tensor)['one2one'][0].transpose(-1, -2)  # 1,8400,84
+            pred_json = pred[0].to_json()
+            # 解析 JSON 字符串
+            pred_data = json.loads(pred_json)
+            res = []
+            for item in pred_data:
+                xmin, ymin, xmax, ymax, = item['box']["x1"], item['box']["y1"], item['box']["x2"], item['box']["y2"]
+                name = item['name']
+                confidence = item['confidence']
+                res.append([xmin, ymin, xmax, ymax, confidence, name])
+
             # 处理每个检测结果
             labels = []
             boxes = []
             conf_threshold = 0.6
-            for xmin, ymin, xmax, ymax, prob, cls in pred_cpu[0]:
+            for xmin, ymin, xmax, ymax, prob, names in res:
                 if prob < conf_threshold:  # 过滤低置信度的检测
                     break
-                cls = int(cls)  # 类别索引
-
-                label = self.labels[cls]  # 生成类别标签
                 # 还原边界框坐标到原始图像尺寸
                 xmin = float(xmin) * scale
                 ymin = float(ymin) * scale
                 xmax = float(xmax) * scale
                 ymax = float(ymax) * scale
                 box = [xmin, ymin, xmax, ymax]
-                labels.append(label)
+                labels.append(names)
                 boxes.append(box)
             # 转换边界框为整数列表
             boxes = [list(map(lambda x: int(x), box)) for box in boxes]
@@ -284,24 +348,62 @@ class V8TorchSegPredictor:
         self.model.eval()  # 设置为推理模式
         self.model.to(self.device)
 
-
     def infer(self, img):
         """执行预测"""
         try:
             orig_shape = img.shape  # 保存原始图像尺寸
             # 预处理图像
             input_tensor, scale = yolo_det_preprocess(img)
-
+            input_wh = ''
             # 将图像转换为 PyTorch 张量并移动到设备（GPU 或 CPU）
             input_tensor = torch.from_numpy(input_tensor).to(self.device)
-
+            iou_threshold = 0.5
+            conf_threshold = 0.5
             # 执行推理
             with torch.no_grad():  # 在推理时禁用梯度计算
                 pred = self.model(input_tensor)
+            output0 = pred[0].transpose(-1, -2)  # 1,8400,116 检测头输出
+            print(f"检测头输出", output0.shape)
+            output1 = pred[1][2][0]  # 32,160,160 分割头输出
+            print(f"分割头输出", output1)
+            pred = torch.from_numpy(np.array(pred).reshape(-1, 38))
+            print(pred.shape)
             # print(f"Prediction shape: {pred.shape}")
             # print(f"Prediction content: {pred}")
             # 后处理获取结果
-            labels, boxes = yolov8_seg_postprocess_batch(pred, 0.5, 0.5)
+            for o in yolov8_seg_postprocess_batch(output0, iou_threshold, conf_threshold)[0]:
+                xmin, ymin, xmax, ymax, cls, prob, i_grid = o
+
+                query_vec = output0[-32:, i_grid]  # 32
+                masked = query_vec @ output1.reshape(32, -1)  # (1, 144 * 256)
+                masked = masked.reshape(output1.shape[1:])  # 恢复成 (144, 256) 的形状
+                mask_f32 = cv2.resize(masked, input_wh)  # 缩放掩码
+                mask = (mask_f32 > 0.5).astype(np.uint8)  # 二值化处理
+                # 找出掩码中的轮廓
+                mask = mask[int(ymin):int(ymax), int(xmin):int(xmax)]
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                # 找到最大轮廓
+                if len(contours):
+                    max_contour = max(contours, key=cv2.contourArea)[:, 0].astype(np.float32)
+                    max_contour[:, 0] += xmin
+                    max_contour[:, 1] += ymin
+                    max_contour[:, 0] *= scale
+                    max_contour[:, 1] *= scale
+                    max_contour = max_contour.astype(np.int32)
+                else:
+                    max_contour = []
+                boxes = []
+                src_width,src_height = orig_shape[2:]
+                xmin = float(max(0., xmin)) * scale
+                ymin = float(max(0., ymin)) * scale
+                xmax = float(min(src_width, xmax)) * scale
+                ymax = float(min(src_height, ymax)) * scale
+                box = [xmin, ymin, xmax, ymax]
+                boxes.append(box)
+                labels = [self.labels[cls]]
+                # 转换边界框为整数列表
+            boxes = [list(map(lambda x: int(x), box)) for box in boxes]
+
             return labels, boxes
 
         except Exception as e:

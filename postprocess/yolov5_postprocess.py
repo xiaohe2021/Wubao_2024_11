@@ -6,7 +6,7 @@ import numpy as np
 Object = Tuple[float, float, float, float, int, float, int]  # xmin, ymin, xmax, ymax, cls, score, grid_index
 
 
-def postprocess_batch(batch_pred: np.ndarray,  # shape: (batch_size, channels, grids)
+def yolov5_detect_postprocess_batch(batch_pred: np.ndarray,  # shape: (batch_size, channels, grids)
                       iou_threshold: float,
                       conf_threshold: float,
                       ) -> List[List[Object]]:

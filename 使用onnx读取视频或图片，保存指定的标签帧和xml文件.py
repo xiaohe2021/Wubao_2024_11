@@ -7,7 +7,7 @@ import numpy as np
 import yaml
 
 from local_utils import Videos, plot_one_box, CreateVoc, Images
-from model import V10OnnxPredictor, V5OnnxPredictor, V5TorchPredictor, V8SegOnnxPredictor, V8TorchSegPredictor
+from model import V10OnnxPredictor, V5OnnxPredictor, V5TorchPredictor, V8SegOnnxPredictor, V8TorchSegPredictor,V10TorchPredictor
 
 
 # 加载YAML配置文件
@@ -64,6 +64,8 @@ class Main:
             elif self.model_type == "v10":
                 if self.model_path.endswith('.onnx'):
                     model = V10OnnxPredictor(self.model_path, self.labels)  # v10检测任务模型
+                elif self.model_path.endswith('.pt'):
+                    model = V10TorchPredictor(self.model_path, self.labels)
         elif self.model_task == "segment":  # 分割任务
             if self.model_type == "v5":
                 # v5 不支持分割任务
@@ -88,7 +90,7 @@ class Main:
             for frame in self.videos.read_video():
                 labels, boxes = model.infer(frame) if model else ([], [])
                 for idx, box in enumerate(boxes):
-                    label = labels[idx] if idx < len(labels) else "unknown"  # 确保标签数量匹配
+                    label = labels[idx]   # 确保标签数量匹配
                     frame = plot_one_box(box, frame, label=label)
 
                 # 根据窗口大小调整帧的内容
