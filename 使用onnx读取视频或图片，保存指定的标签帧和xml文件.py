@@ -62,21 +62,22 @@ class Main:
         self.image_path = list(self.image_path)
         self.video_path = list(self.video_path)
         self.error_labels = list(self.error_labels)
+        # 筛选出需要处理的任务类型
+        ##video 任务就只会启动一次
+        video_task = next(
+            (model_config for model_config in self.config['models'] if model_config.get('task', 'image') == 'video'),
+            None)
+        #存在image任务则执行图像推理。
+        image_task = any(model_config.get('task', 'image') == 'image' for model_config in self.config['models'])
+
         # 任务分发：路径交集计算完成后，再启动任务
-        for model_config, model in zip(self.config['models'], self.models):
-            task = model_config.get('task', 'image')
-            if task == "video":
-                # 启动视频推理线程
-                thread = threading.Thread(target=self.detect_video,
-                                          args=(self.video_path, self.error_labels))
-                thread.start()
-            elif task == "image":
-                # 启动图像推理线程
-                thread = threading.Thread(target=self.detect_images,
-                                          args=(self.image_path, self.error_labels))
-                thread.start()
-            else:
-                print(f"未知任务类型：{task}")
+        if video_task:
+            print(f"task: video, 启动视频推理")
+            self.detect_video(self.video_path, self.error_labels)
+
+        if image_task:
+            print(f"task: image, 启动图像推理")
+            self.detect_images(self.image_path, self.error_labels)
 
     @staticmethod
     def load_config(config_path):
@@ -166,7 +167,6 @@ class Main:
 
                     # 每秒最多保存 5 帧
                     if self.saved_frame_count < 5:
-                        print(f"************开始保存*********************")
                         self.saved_frame_count += 1
                         self.last_save_time = current_time  # 更新保存时间
 
@@ -178,7 +178,6 @@ class Main:
                         voc = CreateVoc()  # 创建VOC的类
                         strftime = videos.video_start_time
                         prefix = f'{self.camera_state}_{self.project}_{self.scene}__{strftime}_{videos.frame_id}'
-                        print(f"Generated prefix: {prefix}")  # 调试输出
                         xml_name = f'{prefix}.xml'
                         img_name = f'{prefix}.jpg'
 
@@ -192,7 +191,8 @@ class Main:
                         voc.set_info(xml_name, labels_filtered, boxes_filtered, self.save_path)
                         voc.write_xml()
                     else:
-                        print(f"错误标签帧过多，已跳过此帧：{videos.frame_id}")
+                        # print(f"错误标签帧过多，已跳过此帧：{videos.frame_id}")
+                        pass
 
         except Exception as e:
             print(f"Error reading video: {e}")
