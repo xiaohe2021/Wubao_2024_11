@@ -54,13 +54,14 @@ class V10OnnxPredictor(ONNXBaseModel):
                     break
                 cls = int(cls)  # 类别索引
 
-                label = [self.labels[cls]]  # 生成类别标签
+
                 # 还原边界框坐标到原始图像尺寸
                 xmin = float(xmin) * scale
                 ymin = float(ymin) * scale
                 xmax = float(xmax) * scale
                 ymax = float(ymax) * scale
                 box = [xmin, ymin, xmax, ymax]
+                label = self.labels[cls]  # 生成类别标签
                 labels.append(label)
                 boxes.append(box)
             # 转换边界框为整数列表
@@ -202,7 +203,8 @@ class V8SegOnnxPredictor(ONNXBaseModel):
                 ymax = float(min(src_height, ymax)) * scale
                 box = [xmin, ymin, xmax, ymax]
                 boxes.append(box)
-                labels = [self.labels[cls]]
+                label = self.labels[cls]
+                labels.append(label)  # 为每个框添加对应的标签
                 # 转换边界框为整数列表
             boxes = [list(map(lambda x: int(x), box)) for box in boxes]
 
@@ -261,7 +263,8 @@ class V5OnnxPredictor(ONNXBaseModel):
                 xmax = min(float(src_width), xmax) * scale
                 ymax = min(float(src_height), ymax) * scale
                 boxes = BBox(xmin, ymin, xmax, ymax)
-                labels = [self.labels[cls]]
+                label = self.labels[cls]  # 生成类别标签
+                labels.append(label)
             return labels, boxes
 
         except Exception as e:
@@ -351,6 +354,8 @@ class V8TorchSegPredictor:
     def infer(self, img):
         """执行预测"""
         try:
+            boxes = []
+            labels = []
             orig_shape = img.shape  # 保存原始图像尺寸
             # 预处理图像
             input_tensor, scale = yolo_det_preprocess(img)
@@ -392,7 +397,7 @@ class V8TorchSegPredictor:
                     max_contour = max_contour.astype(np.int32)
                 else:
                     max_contour = []
-                boxes = []
+
                 src_width,src_height = orig_shape[2:]
                 xmin = float(max(0., xmin)) * scale
                 ymin = float(max(0., ymin)) * scale
@@ -400,7 +405,8 @@ class V8TorchSegPredictor:
                 ymax = float(min(src_height, ymax)) * scale
                 box = [xmin, ymin, xmax, ymax]
                 boxes.append(box)
-                labels = [self.labels[cls]]
+                label = self.labels[cls]  # 生成类别标签
+                labels.append(label)
                 # 转换边界框为整数列表
             boxes = [list(map(lambda x: int(x), box)) for box in boxes]
 

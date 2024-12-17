@@ -235,7 +235,7 @@ class CreateVoc:
 
 class Videos:
     def __init__(self, path):
-        self.path = path  # 单个视频文件路径或文件夹路径
+        self.path = path  # 单个视频文件路径或文件夹路径或者视频路径列表
         self.current_image = None  # 当前帧图像
         self.frame_count = 0  # 帧计数器
         self.frame_id = None  # 当前帧编号
@@ -246,9 +246,17 @@ class Videos:
         获取视频文件列表。
         如果路径是文件，返回该文件路径。
         如果路径是文件夹，返回文件夹下所有视频文件路径。
+        如果路径是一个视频文件列表，直接返回该列表。
         """
+        # 如果是视频文件列表，则直接返回
+        if isinstance(self.path, list):
+            return [video for video in self.path if os.path.isfile(video)]
+
+        # 如果是文件路径
         if os.path.isfile(self.path):
             return [self.path]  # 单个文件
+
+        # 如果是目录路径
         elif os.path.isdir(self.path):
             # 遍历文件夹中的视频文件
             return [
@@ -261,7 +269,7 @@ class Videos:
 
     def read_video(self):
         """
-        逐帧读取视频，支持单个视频或目录路径。
+        逐帧读取视频，支持单个视频或目录路径或视频列表。
         """
         video_list = self.__get_video_list()
         if not video_list:

@@ -1,44 +1,57 @@
-#camera_state: "CS"
-#project: "DZ"
-#scene: "overlook"
-###路径必须是E:/
-#save_path: 'E:\data\videos\1117-1124吊装误报视频数据\overlook_warn保存的图片'
-###读取图片/视频
-#task: "video"
-#
-##video_path必须是文件夹路径
-#video_path: 'E:\data\videos\1117-1124吊装误报视频数据\overlook_warn'
-#image_path: 'E:\data\images\2024_1119_驾驶室前方1\CS_DJ_Qin_Ri_ZC_driver_2024_11_19_145151_mul_obj_2.png'
-#model_path: 'E:\data\model\1126_models\models\overlook\1\model.onnx'
-#model_type: "v10"
-##保存的标签
-#error_labels: ["ren", "dadiaogou", "xiaodiaogou"]
-##模型的标签名
-#labels: ["ren", "dadiaogou", "xiaodiaogou", "shengsuo",
-#    "dianban", "jingjia", "zhongjingshiguan", "peizhong",
-#    "zhendongshai", "guanhui", "yeqifenliqi", "guanju",
-#    "nijiangbeng", "renzijia", "huanxingfangpengqi", "zhengchuan",
-#    "lixinji", "dashenglun", "ercengtai", "tianche",
-#    "zhabanfangpengqi", "chaiyouji", "yingfang", "diancishache",
-#    "yeqidaqian", "dingqu", "jiaoche", "chushachuniqi",
-#    "dizuo", "nijiangguan", "fadianji", "gaodeng",
-#    "qita_diaowu"]
+models:
+  - enabled: false   #是否启用当前模型
+    #------------------启用两个模型时会被后一个覆盖---------------------
+    camera_state: "CS"
+    project: "DZ"
+    scene: "overlook"
+    save_path: 'E:\data\images\test_2'
+    #------------------模型独立配置---------------------------------
+    model_path: 'E:\data\model\最新models\overlook1203.onnx'
+    model_type: "v10"
+    model_task: "detect"
+    task: "video"
+    labels: [ 'ren', 'dadiaogou', 'xiaodiaogou', 'shengsuo', 'dianban', 'jingjia', 'zhongjingshiguan', 'peizhong', 'zhendongshai', 'guanhui', 'yeqifenliqi', 'guanju', 'nijiangbeng', 'renzijia', 'huanxingfangpengqi', 'zhengchuan', 'lixinji', 'dashenglun', 'ercengtai', 'tianche', 'zhabanfangpengqi', 'chaiyouji', 'yingfang', 'diancishache', 'yeqidaqian', 'dingqu', 'jiaoche', 'chushachuniqi', 'dizuo', 'nijiangguan', 'fadianji', 'gaodengzi', 'qita_diaowu' ]
+    props_labels: [ 'yingfang', 'jingjia' ]
+    props_group_labels: [ [ 'dimian', 'kongzhong' ], [ '', '' ] ]
+    #------------------启用两个模型时会求交集-------------------------
+    video_path: 'E:\data\videos\20241124_1208吊装误报视频\7'
+    image_path: 'E:\ajy_zj\donghuo'
+    error_labels: [ "shengsuo" ]
 
-camera_state: "CS"
-project: "DZ"
-scene: "Inside"
-##！！！！！！！！！！！！！路径必须是单引号
-save_path: 'E:\data\images\seg'
-##读取图片/视频
-task: "video"
+  - enabled: true
+    camera_state: "dr"
+    ##！！！！！！！！！！！！！路径必须是单引号
+    ##读取图片/视频
+    project: "zd"
+    scene: "general"
+    save_path: 'E:\data\images\test_2'
+    task: "video"
+    video_path: 'E:\data\videos\吊装已整理测试视频\10.跨越警示围栏\around20240617_162328_kuayuejingshidai.mkv'
+    image_path: 'E:\general\images'
+    model_path: 'E:\data\model\最新models\general12103.onnx'
+    model_type: "v10"
+    model_task: "detect"
+    error_labels: [ "ren" ]
+    labels: [ "ren", "tou", "bai_anquanmao", "huang_anquanmao",
+              "lan_anquanmao", "hong_anquanmao", "zhihuifu", "jianhufu",
+              "jingshiweilan", "jingshizhuang", "qita_yifu", "shengjie",
+              "quguaqi", "shoulaqianyinsheng", "shoufudiaowu", "zhitui",
+              "dianban", "dianban_no", "anquandai" ]
+    props_labels:
+    props_group_labels:
 
-#video_path必须是文件夹路径
-video_path: 'E:\data\videos\吊装已整理测试视频\10.跨越警示围栏\around20240617_162328_kuayuejingshidai.mkv'
-image_path: 'E:\ajy_zj\donghuo'
-model_path: 'E:\diaozhuang\model\jingshidai0925_modified.onnx'
-model_type: "v8"
-model_task: "segment"
-#保存的标签
-error_labels: ["jingshidai"]
-#模型的标签名
-labels: ["jingshidai"]
+  - enabled: true #是否弃用当前模型
+    camera_state: "CS"
+    project: "DZ"
+    scene: "seg"
+    save_path: 'E:\data\images\test_1'
+    task: "video"
+    video_path: 'E:\data\videos\吊装已整理测试视频\3.未拉警示带围栏桩\jingshidai.mkv'
+    image_path: 'E:\general\images'
+    model_path: 'E:\data\model\最新models\jingshidai12066.onnx'
+    model_type: "v8"
+    model_task: "segment"
+    error_labels: [ "jingshidai" ]
+    labels: [ "jingshidai" ]
+    props_labels:
+    props_group_labels:

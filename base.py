@@ -9,13 +9,19 @@ class ONNXBaseModel(ABC):
     def __init__(self, onnx_path, labels, providers=None):
         self.onnx_path = onnx_path
         self.providers = providers if providers else ['CPUExecutionProvider']
-        self.session = ort.InferenceSession(self.onnx_path, providers=self.providers)
+        print(f"self.providers = {self.providers}")
+        # 设置日志等级
+
+        ort.set_default_logger_severity(3)
+        self.session = ort.InferenceSession(self.onnx_path, providers=self.providers,)
         self.labels = labels
         # 缓存模型相关属性
         self.input_name = self.session.get_inputs()[0].name
         self.output_names = [output.name for output in self.session.get_outputs()]
         self.input_hw_shape = self.session.get_inputs()[0].shape[2:]
-        self.output_shapes = [output.shape for output in self.session.get_outputs()]
+        self.output_shapes = [i.shape for i in self.session.get_outputs()]
+        self.input_types = [i.type for i in self.session.get_inputs()]  # 获取输入类型
+        self.output_types = [output.type for output in self.session.get_outputs()]
         self.metadata_names = self._extract_metadata_names()
         if not self.metadata_names:
             print("No metadata names found in model.")
@@ -26,6 +32,8 @@ class ONNXBaseModel(ABC):
         print(f"Output names: {self.output_names}")
         print(f"Input HW shape: {self.input_hw_shape}")
         print(f"Output shapes: {self.output_shapes}")
+        print(f"Input types: {self.input_types}")  # 打印输入类型
+        print(f"Output types: {self.output_types}")  # 打印输出类型
 
     def _extract_metadata_names(self):
         """私有方法：从模型元数据中解析 'names' """
