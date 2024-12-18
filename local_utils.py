@@ -368,6 +368,29 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     return img
 
 
+def plot_one_contour(bbox, img, color=None, label=None, contour=None, line_thickness=None):
+    # Plots one  contour on  image img
+    color = color or [random.randint(0, 255) for _ in range(3)]
+    x1, y1, x2, y2 = [int(coord) for coord in bbox]
+    # 绘制标签和置信度
+    # text = f'{label}: {confidence:.2f}'
+    text = f'{label}'
+    cv2.putText(img, text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+    # 绘制轮廓
+    cv2.polylines(img, [contour], isClosed=True, color=(0, 255, 0), thickness=2)
+
+    # 找出轮廓中的最大矩形框
+    max_x = max(point[0] for point in contour)
+    max_y = max(point[1] for point in contour)
+    min_x = min(point[0] for point in contour)
+    min_y = min(point[1] for point in contour)
+
+    # 绘制最大矩形框
+    cv2.rectangle(img, (min_x, min_y), (max_x, max_y), (255, 0, 0), thickness=2)
+
+    return img
+
+
 def letterbox(img, new_hw, color=(114, 114, 114)):
     """将图像调整为指定大小，保持长宽比，不足部分填充"""
     src_h, src_w, _ = img.shape  # 获取原始图像的高度和宽度

@@ -54,7 +54,6 @@ class V10OnnxPredictor(ONNXBaseModel):
                     break
                 cls = int(cls)  # 类别索引
 
-
                 # 还原边界框坐标到原始图像尺寸
                 xmin = float(xmin) * scale
                 ymin = float(ymin) * scale
@@ -117,7 +116,7 @@ class V8DetectPropsOnnxPredictor(ONNXBaseModel):
                 (xmin, ymin, xmax, ymax, cls, prob), props = o
                 cls = int(cls)  # 类别索引
 
-                label = self.labels[cls] # 生成类别标签
+                label = self.labels[cls]  # 生成类别标签
                 # 还原边界框坐标到原始图像尺寸
                 xmin = float(xmin) * scale
                 ymin = float(ymin) * scale
@@ -153,15 +152,16 @@ class V8SegOnnxPredictor(ONNXBaseModel):
             """后处理预测结果"""
             labels = []  # 存储标签
             boxes = []  # 存储边界框
+            max_contour = []  # 存储边界框
             iou_threshold = 0.5
             conf_threshold = 0.5
             input_hw = self.get_input_hw_shape()
+            input_wh = self.get_input_wh_shape()
             img, scale = yolo_det_preprocess(src_img, input_hw)
             img = np.expand_dims(img, axis=0)
 
             # # B C H W
             src_height, src_width = src_img.shape[:2]
-            input_wh = src_width, src_height
             # 执行推理
             inputs = {self.get_input_name(): img}
             det_output = self.session.run([self.get_output_names0()], inputs)
@@ -398,7 +398,7 @@ class V8TorchSegPredictor:
                 else:
                     max_contour = []
 
-                src_width,src_height = orig_shape[2:]
+                src_width, src_height = orig_shape[2:]
                 xmin = float(max(0., xmin)) * scale
                 ymin = float(max(0., ymin)) * scale
                 xmax = float(min(src_width, xmax)) * scale
