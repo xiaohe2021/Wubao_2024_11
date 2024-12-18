@@ -60,6 +60,9 @@ class ONNXBaseModel(ABC):
     def get_input_hw_shape(self):
         return self.input_hw_shape
 
+    def get_input_wh_shape(self):
+        return self.input_hw_shape[::-1]
+
     def get_output_shape(self):
         return self.output_shapes
 
